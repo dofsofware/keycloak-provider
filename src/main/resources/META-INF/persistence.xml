@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<persistence xmlns="https://jakarta.ee/xml/ns/persistence"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="https://jakarta.ee/xml/ns/persistence
+             https://jakarta.ee/xml/ns/persistence/persistence_3_0.xsd"
+             version="3.0">
+
+    <persistence-unit name="user-store" transaction-type="JTA">
+        <!-- Classes d'entités -->
+        <class>com.secusociale.entity.User</class>
+        <class>com.secusociale.entity.Authority</class>
+
+        <properties>
+            <property name="hibernate.dialect" value="org.hibernate.dialect.MySQLDialect" />
+            <property name="hibernate.connection.url" value="jdbc:mysql://127.0.0.1:3306/cssipres_preprod?allowPublicKeyRetrieval=true&amp;useUnicode=true&amp;characterEncoding=UTF-8&amp;useSSL=false&amp;useLegacyDatetimeCode=false&amp;serverTimezone=UTC&amp;createDatabaseIfNotExist=true" />
+            <property name="hibernate.connection.username" value="suntel" />
+            <property name="hibernate.connection.password" value="suntel" />
+            <property name="hibernate.connection.driver_class" value="com.mysql.cj.jdbc.Driver" />
+            <property name="hibernate.connection.datasource" value="user-store" />
+        </properties>
+    </persistence-unit>
+</persistence>
