@@ -30,7 +30,7 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
     protected static final String CONFIG_PERSISTENCE_UNIT = "persistenceUnitName";
 
     // Default values
-    private static final String DEFAULT_CONNECTION_URL = "jdbc:mysql://127.0.0.1:3306/cssipres_preprod?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=UTC&createDatabaseIfNotExist=true";
+    private static final String DEFAULT_CONNECTION_URL = "jdbc:mysql://localhost:3306/cssipres_preprod?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=UTC&createDatabaseIfNotExist=true";
     private static final String DEFAULT_CONNECTION_USERNAME = "suntel";
     private static final String DEFAULT_CONNECTION_PASSWORD = "suntel";
     private static final String DEFAULT_CONNECTION_DRIVER = "com.mysql.cj.jdbc.Driver";

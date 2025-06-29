@@ -12,7 +12,7 @@
 
         <properties>
             <property name="hibernate.dialect" value="org.hibernate.dialect.MySQLDialect" />
-            <property name="hibernate.connection.url" value="jdbc:mysql://127.0.0.1:3306/cssipres_preprod?allowPublicKeyRetrieval=true&amp;useUnicode=true&amp;characterEncoding=UTF-8&amp;useSSL=false&amp;useLegacyDatetimeCode=false&amp;serverTimezone=UTC&amp;createDatabaseIfNotExist=true" />
+            <property name="hibernate.connection.url" value="jdbc:mysql://localhost:3306/cssipres_preprod?allowPublicKeyRetrieval=true&amp;useUnicode=true&amp;characterEncoding=UTF-8&amp;useSSL=false&amp;useLegacyDatetimeCode=false&amp;serverTimezone=UTC&amp;createDatabaseIfNotExist=true" />
             <property name="hibernate.connection.username" value="suntel" />
             <property name="hibernate.connection.password" value="suntel" />
             <property name="hibernate.connection.driver_class" value="com.mysql.cj.jdbc.Driver" />

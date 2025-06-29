@@ -29,13 +29,13 @@ class DatabaseConnectionTest {
         Map<String, Object> properties = new HashMap<>();
 
         // Configuration JDBC standard
-        properties.put("jakarta.persistence.jdbc.url", "jdbc:mysql://127.0.0.1:3306/cssipres_preprod?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=UTC&createDatabaseIfNotExist=true");
+        properties.put("jakarta.persistence.jdbc.url", "jdbc:mysql://localhost:3306/cssipres_preprod?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=UTC&createDatabaseIfNotExist=true");
         properties.put("jakarta.persistence.jdbc.user", "suntel");
         properties.put("jakarta.persistence.jdbc.password", "suntel");
         properties.put("jakarta.persistence.jdbc.driver", "com.mysql.cj.jdbc.Driver");
 
         // Configuration Hibernate - Connexions
-        properties.put("hibernate.connection.url", "jdbc:mysql://127.0.0.1:3306/cssipres_preprod?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=UTC&createDatabaseIfNotExist=true");
+        properties.put("hibernate.connection.url", "jdbc:mysql://localhost:3306/cssipres_preprod?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=UTC&createDatabaseIfNotExist=true");
         properties.put("hibernate.connection.username", "suntel");
         properties.put("hibernate.connection.password", "suntel");
         properties.put("hibernate.connection.driver_class", "com.mysql.cj.jdbc.Driver");
