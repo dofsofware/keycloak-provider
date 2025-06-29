@@ -6,17 +6,16 @@
              version="3.0">
 
     <persistence-unit name="user-store-pu" transaction-type="JTA">
-        <!-- Classes d'entités -->
         <class>com.secusociale.entity.User</class>
         <class>com.secusociale.entity.Authority</class>
-
+        
         <properties>
             <property name="hibernate.dialect" value="org.hibernate.dialect.MySQLDialect" />
             <property name="hibernate.connection.url" value="jdbc:mysql://localhost:3306/cssipres_preprod?allowPublicKeyRetrieval=true&amp;useUnicode=true&amp;characterEncoding=UTF-8&amp;useSSL=false&amp;useLegacyDatetimeCode=false&amp;serverTimezone=UTC&amp;createDatabaseIfNotExist=true" />
             <property name="hibernate.connection.username" value="suntel" />
             <property name="hibernate.connection.password" value="suntel" />
             <property name="hibernate.connection.driver_class" value="com.mysql.cj.jdbc.Driver" />
-            <property name="hibernate.connection.datasource" value="user-store" />
+            <property name="hibernate.hbm2ddl.auto" value="none" />
         </properties>
     </persistence-unit>
 </persistence>
