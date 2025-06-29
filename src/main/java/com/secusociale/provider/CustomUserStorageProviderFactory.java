@@ -34,7 +34,7 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
     private static final String DEFAULT_CONNECTION_USERNAME = "suntel";
     private static final String DEFAULT_CONNECTION_PASSWORD = "suntel";
     private static final String DEFAULT_CONNECTION_DRIVER = "com.mysql.cj.jdbc.Driver";
-    private static final String DEFAULT_PERSISTENCE_UNIT = "user-store";
+    private static final String DEFAULT_PERSISTENCE_UNIT = "user-store-pu";
 
     // Cache des EntityManagerFactory par configuration
     private static final Map<String, EntityManagerFactory> entityManagerFactories = new ConcurrentHashMap<>();

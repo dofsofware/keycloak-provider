@@ -5,7 +5,7 @@
              https://jakarta.ee/xml/ns/persistence/persistence_3_0.xsd"
              version="3.0">
 
-    <persistence-unit name="user-store" transaction-type="JTA">
+    <persistence-unit name="user-store-pu" transaction-type="JTA">
         <!-- Classes d'entités -->
         <class>com.secusociale.entity.User</class>
         <class>com.secusociale.entity.Authority</class>

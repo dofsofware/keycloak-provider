@@ -72,7 +72,7 @@ class DatabaseConnectionTest {
         properties.put("hibernate.order_inserts", "true");
         properties.put("hibernate.order_updates", "true");
 
-        emf = Persistence.createEntityManagerFactory("user-store", properties);
+        emf = Persistence.createEntityManagerFactory("user-store-pu", properties);
         assertNotNull(emf, "EntityManagerFactory ne doit pas être null");
         System.out.println("✅ EntityManagerFactory créé avec succès");
     }
