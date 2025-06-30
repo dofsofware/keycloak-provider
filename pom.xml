@@ -18,6 +18,7 @@
         <hibernate.version>6.4.4.Final</hibernate.version>
         <junit.jupiter.version>5.10.0</junit.jupiter.version>
         <mysql.connector.version>8.0.33</mysql.connector.version>
+        <jbcrypt.version>0.4</jbcrypt.version>
     </properties>
 
     <dependencies>
@@ -79,11 +80,19 @@
             <version>${keycloak.version}</version>
         </dependency>
 
-        <!-- Spring Security (pour BCryptPasswordEncoder) -->
+        <!-- jBCrypt - Compatible avec Keycloak -->
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>${jbcrypt.version}</version>
+        </dependency>
+
+        <!-- Spring Security (pour BCryptPasswordEncoder) - SEULEMENT POUR LES TESTS -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
             <version>${spring.security.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <!-- JUnit 5 (pour les tests) -->
