@@ -9,7 +9,6 @@ import org.keycloak.models.RoleModel;
 import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
 
-import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -36,7 +35,8 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setUsername(String username) {
-        user.setLogin(username);
+        // Lecture seule - ne pas permettre la modification
+        throw new UnsupportedOperationException("Modification du username non autorisée via ce provider");
     }
 
     @Override
@@ -46,7 +46,8 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setEmail(String email) {
-        user.setEmail(email);
+        // Lecture seule - ne pas permettre la modification
+        throw new UnsupportedOperationException("Modification de l'email non autorisée via ce provider");
     }
 
     @Override
@@ -56,7 +57,8 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setEmailVerified(boolean verified) {
-        user.setActivated(verified);
+        // Lecture seule - ne pas permettre la modification
+        throw new UnsupportedOperationException("Modification de la vérification email non autorisée via ce provider");
     }
 
     @Override
@@ -66,7 +68,8 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setFirstName(String firstName) {
-        user.setFirstName(firstName);
+        // Lecture seule - ne pas permettre la modification
+        throw new UnsupportedOperationException("Modification du prénom non autorisée via ce provider");
     }
 
     @Override
@@ -76,7 +79,8 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setLastName(String lastName) {
-        user.setLastName(lastName);
+        // Lecture seule - ne pas permettre la modification
+        throw new UnsupportedOperationException("Modification du nom non autorisée via ce provider");
     }
 
     @Override
@@ -86,16 +90,18 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setEnabled(boolean enabled) {
-        user.setActivated(enabled);
+        // Lecture seule - ne pas permettre la modification
+        throw new UnsupportedOperationException("Modification du statut activé non autorisée via ce provider");
     }
 
     @Override
     public Long getCreatedTimestamp() {
-        // Utiliser la date de création si disponible dans l'entité parente
+        // Pas de date de création dans l'entité User actuelle
         return null;
     }
 
-    // Attributs personnalisés
+    // ========== ATTRIBUTS PERSONNALISÉS ==========
+
     @Override
     public Stream<String> getAttributeStream(String name) {
         List<String> result = new ArrayList<>();
@@ -139,6 +145,9 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
                     result.add(user.getExpirationDate().toString());
                 }
                 break;
+            case "locked":
+                result.add(String.valueOf(user.isLocked()));
+                break;
             default:
                 return super.getAttributeStream(name);
         }
@@ -169,6 +178,7 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
             attrs.put("imageUrl", Collections.singletonList(user.getImageUrl()));
         }
         attrs.put("hasPasswordUpdated", Collections.singletonList(String.valueOf(user.isHasPasswordUpdated())));
+        attrs.put("locked", Collections.singletonList(String.valueOf(user.isLocked())));
 
         if (user.getExpirationDate() != null) {
             attrs.put("expirationDate", Collections.singletonList(user.getExpirationDate().toString()));
@@ -179,65 +189,18 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setAttribute(String name, List<String> values) {
-        if (values == null || values.isEmpty()) return;
-        String value = values.get(0);
-
-        switch (name) {
-            case "phone":
-                user.setPhone(value);
-                break;
-            case "typeCompte":
-                user.setTypeCompte(value);
-                break;
-            case "institution":
-                user.setInstitution(value);
-                break;
-            case "agence":
-                user.setAgence(value);
-                break;
-            case "langKey":
-                user.setLangKey(value);
-                break;
-            case "imageUrl":
-                user.setImageUrl(value);
-                break;
-            case "hasPasswordUpdated":
-                user.setHasPasswordUpdated(Boolean.parseBoolean(value));
-                break;
-            default:
-                super.setAttribute(name, values);
-                break;
-        }
+        // Lecture seule - ne pas permettre la modification des attributs
+        throw new UnsupportedOperationException("Modification des attributs non autorisée via ce provider");
     }
 
     @Override
     public void removeAttribute(String name) {
-        switch (name) {
-            case "phone":
-                user.setPhone(null);
-                break;
-            case "typeCompte":
-                user.setTypeCompte(null);
-                break;
-            case "institution":
-                user.setInstitution(null);
-                break;
-            case "agence":
-                user.setAgence(null);
-                break;
-            case "langKey":
-                user.setLangKey(null);
-                break;
-            case "imageUrl":
-                user.setImageUrl(null);
-                break;
-            default:
-                super.removeAttribute(name);
-                break;
-        }
+        // Lecture seule - ne pas permettre la suppression des attributs
+        throw new UnsupportedOperationException("Suppression des attributs non autorisée via ce provider");
     }
 
-    // Gestion des rôles basée sur les authorities
+    // ========== GESTION DES RÔLES ==========
+
     @Override
     public Stream<RoleModel> getRealmRoleMappingsStream() {
         if (user.getAuthorities() == null || user.getAuthorities().isEmpty()) {
@@ -268,9 +231,8 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void grantRole(RoleModel role) {
-        // Cette méthode pourrait être implémentée si vous voulez permettre
-        // l'ajout de rôles depuis Keycloak
-        // Pour l'instant, nous considérons les rôles comme en lecture seule
+        // Lecture seule - ne pas permettre l'ajout de rôles
+        throw new UnsupportedOperationException("Ajout de rôles non autorisé via ce provider");
     }
 
     @Override
@@ -280,10 +242,12 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void deleteRoleMapping(RoleModel role) {
-        // Rôles en lecture seule pour ce cas d'usage
+        // Lecture seule - ne pas permettre la suppression de rôles
+        throw new UnsupportedOperationException("Suppression de rôles non autorisée via ce provider");
     }
 
-    // Méthodes utilitaires
+    // ========== MÉTHODES UTILITAIRES ==========
+
     public User getUser() {
         return user;
     }
@@ -295,6 +259,7 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
                 ", username='" + getUsername() + '\'' +
                 ", email='" + getEmail() + '\'' +
                 ", enabled=" + isEnabled() +
+                ", locked=" + user.isLocked() +
                 '}';
     }
 }

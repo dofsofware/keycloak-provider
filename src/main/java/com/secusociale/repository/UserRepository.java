@@ -1,5 +1,6 @@
 package com.secusociale.repository;
 
+import com.secusociale.entity.Authority;
 import com.secusociale.entity.User;
 import org.jboss.logging.Logger;
 
@@ -7,8 +8,10 @@ import javax.sql.DataSource;
 import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Repository utilisant une connexion JDBC directe vers la base de données externe
@@ -27,10 +30,10 @@ public class UserRepository {
         try {
             logger.debugf("Recherche utilisateur par ID: %d", id);
 
-            String sql = "SELECT id, login, password_hash, first_name, last_name, phone, email, " +
-                    "activated, locked, has_password_updated, lang_key, image_url, type_compte, " +
-                    "institution, agence, activation_key, reset_key, reset_date, expiration_date, otp, cachet " +
-                    "FROM jhi_user WHERE id = ?";
+            String sql = "SELECT u.id, u.login, u.password_hash, u.first_name, u.last_name, u.phone, u.email, " +
+                    "u.activated, u.locked, u.has_password_updated, u.lang_key, u.image_url, u.type_compte, " +
+                    "u.institution, u.agence, u.activation_key, u.reset_key, u.reset_date, u.expiration_date, u.otp, u.cachet " +
+                    "FROM jhi_user u WHERE u.id = ?";
 
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -40,6 +43,8 @@ public class UserRepository {
                 try (ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) {
                         User user = mapResultSetToUser(rs);
+                        // Charger les authorities
+                        loadUserAuthorities(user, conn);
                         logger.debugf("Utilisateur trouvé: %s", user.getLogin());
                         return Optional.of(user);
                     } else {
@@ -58,10 +63,10 @@ public class UserRepository {
         try {
             logger.debugf("Recherche utilisateur par login: %s", login);
 
-            String sql = "SELECT id, login, password_hash, first_name, last_name, phone, email, " +
-                    "activated, locked, has_password_updated, lang_key, image_url, type_compte, " +
-                    "institution, agence, activation_key, reset_key, reset_date, expiration_date, otp, cachet " +
-                    "FROM jhi_user WHERE login = ?";
+            String sql = "SELECT u.id, u.login, u.password_hash, u.first_name, u.last_name, u.phone, u.email, " +
+                    "u.activated, u.locked, u.has_password_updated, u.lang_key, u.image_url, u.type_compte, " +
+                    "u.institution, u.agence, u.activation_key, u.reset_key, u.reset_date, u.expiration_date, u.otp, u.cachet " +
+                    "FROM jhi_user u WHERE u.login = ?";
 
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -71,6 +76,8 @@ public class UserRepository {
                 try (ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) {
                         User user = mapResultSetToUser(rs);
+                        // Charger les authorities
+                        loadUserAuthorities(user, conn);
                         logger.debugf("Utilisateur trouvé par login %s: %s", login, user.getEmail());
                         return Optional.of(user);
                     } else {
@@ -89,10 +96,10 @@ public class UserRepository {
         try {
             logger.debugf("Recherche utilisateur par email: %s", email);
 
-            String sql = "SELECT id, login, password_hash, first_name, last_name, phone, email, " +
-                    "activated, locked, has_password_updated, lang_key, image_url, type_compte, " +
-                    "institution, agence, activation_key, reset_key, reset_date, expiration_date, otp, cachet " +
-                    "FROM jhi_user WHERE LOWER(email) = LOWER(?)";
+            String sql = "SELECT u.id, u.login, u.password_hash, u.first_name, u.last_name, u.phone, u.email, " +
+                    "u.activated, u.locked, u.has_password_updated, u.lang_key, u.image_url, u.type_compte, " +
+                    "u.institution, u.agence, u.activation_key, u.reset_key, u.reset_date, u.expiration_date, u.otp, u.cachet " +
+                    "FROM jhi_user u WHERE LOWER(u.email) = LOWER(?)";
 
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -102,6 +109,8 @@ public class UserRepository {
                 try (ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) {
                         User user = mapResultSetToUser(rs);
+                        // Charger les authorities
+                        loadUserAuthorities(user, conn);
                         logger.debugf("Utilisateur trouvé par email %s: %s", email, user.getLogin());
                         return Optional.of(user);
                     } else {
@@ -120,11 +129,11 @@ public class UserRepository {
         try {
             logger.debugf("Recherche utilisateurs par terme: %s", searchTerm);
 
-            String sql = "SELECT id, login, password_hash, first_name, last_name, phone, email, " +
-                    "activated, locked, has_password_updated, lang_key, image_url, type_compte, " +
-                    "institution, agence, activation_key, reset_key, reset_date, expiration_date, otp, cachet " +
-                    "FROM jhi_user WHERE LOWER(email) LIKE LOWER(?) OR LOWER(login) LIKE LOWER(?) " +
-                    "ORDER BY id LIMIT 50";
+            String sql = "SELECT u.id, u.login, u.password_hash, u.first_name, u.last_name, u.phone, u.email, " +
+                    "u.activated, u.locked, u.has_password_updated, u.lang_key, u.image_url, u.type_compte, " +
+                    "u.institution, u.agence, u.activation_key, u.reset_key, u.reset_date, u.expiration_date, u.otp, u.cachet " +
+                    "FROM jhi_user u WHERE LOWER(u.email) LIKE LOWER(?) OR LOWER(u.login) LIKE LOWER(?) " +
+                    "ORDER BY u.id LIMIT 50";
 
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -135,7 +144,10 @@ public class UserRepository {
                 List<User> users = new ArrayList<>();
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
-                        users.add(mapResultSetToUser(rs));
+                        User user = mapResultSetToUser(rs);
+                        // Charger les authorities pour chaque utilisateur
+                        loadUserAuthorities(user, conn);
+                        users.add(user);
                     }
                 }
 
@@ -145,6 +157,31 @@ public class UserRepository {
         } catch (Exception e) {
             logger.errorf(e, "Erreur lors de la recherche par terme %s: %s", searchTerm, e.getMessage());
             return List.of();
+        }
+    }
+
+    /**
+     * Charge les authorities d'un utilisateur
+     */
+    private void loadUserAuthorities(User user, Connection conn) throws SQLException {
+        String sql = "SELECT a.name FROM jhi_authority a " +
+                "INNER JOIN jhi_user_authority ua ON a.name = ua.authority_name " +
+                "WHERE ua.user_id = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, user.getId());
+
+            Set<Authority> authorities = new HashSet<>();
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    Authority authority = new Authority();
+                    authority.setName(rs.getString("name"));
+                    authorities.add(authority);
+                }
+            }
+
+            user.setAuthorities(authorities);
+            logger.debugf("Chargé %d authorities pour l'utilisateur %s", authorities.size(), user.getLogin());
         }
     }
 
