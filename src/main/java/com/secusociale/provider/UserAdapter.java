@@ -6,8 +6,10 @@ import org.keycloak.component.ComponentModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
+import org.jboss.logging.Logger;
 
 import java.util.*;
 import java.util.stream.Stream;
@@ -16,7 +18,7 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     private User user;
     private String keycloakId;
-
+    private static final Logger logger = Logger.getLogger(UserAdapter.class);
     public UserAdapter(KeycloakSession session, RealmModel realm, ComponentModel model, User user) {
         super(session, realm, model);
         this.user = user;
@@ -261,5 +263,59 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
                 ", enabled=" + isEnabled() +
                 ", locked=" + user.isLocked() +
                 '}';
+    }
+
+    @Override
+    public Stream<String> getRequiredActionsStream() {
+        logger.infof("🔍 getRequiredActionsStream appelé pour l'utilisateur: %s", getUsername());
+        logger.infof("📊 État utilisateur - Activé: %s, PasswordUpdated: %s, Locked: %s",
+                user.isActivated(), user.isHasPasswordUpdated(), user.isLocked());
+
+        // Pour éviter les actions requises automatiques, retourner un stream vide
+        // ou gérer selon votre logique métier
+
+        List<String> requiredActions = new ArrayList<>();
+
+        // Exemple de logique conditionnelle :
+        // Si l'utilisateur n'a jamais mis à jour son mot de passe
+        if (!user.isHasPasswordUpdated()) {
+            logger.infof("⚠️ Utilisateur %s n'a pas mis à jour son mot de passe", getUsername());
+            // Vous pouvez forcer une mise à jour du mot de passe
+            // requiredActions.add(UserModel.RequiredAction.UPDATE_PASSWORD.toString());
+        }
+
+        // Si l'email n'est pas vérifié et vous voulez le forcer
+        if (!user.isActivated()) {
+            logger.infof("⚠️ Utilisateur %s n'est pas activé", getUsername());
+            // requiredActions.add(UserModel.RequiredAction.VERIFY_EMAIL.toString());
+        }
+
+        logger.infof("✅ Actions requises pour %s: %s", getUsername(),
+                requiredActions.isEmpty() ? "Aucune" : String.join(", ", requiredActions));
+
+        // Pour l'instant, on retourne un stream vide pour éviter les blocages
+        return requiredActions.stream();
+    }
+
+    @Override
+    public void addRequiredAction(String action) {
+        // Optionnel : loguer ou ignorer les ajouts d'actions
+        logger.infof("➕ Tentative d'ajout de l'action requise '%s' pour l'utilisateur %s (ignorée)", action, getUsername());
+    }
+
+    @Override
+    public void removeRequiredAction(String action) {
+        // Optionnel : loguer les suppressions
+        logger.infof("➖ Suppression de l'action requise '%s' pour l'utilisateur %s", action, getUsername());
+    }
+
+    @Override
+    public void addRequiredAction(UserModel.RequiredAction action) {
+        addRequiredAction(action.toString());
+    }
+
+    @Override
+    public void removeRequiredAction(UserModel.RequiredAction action) {
+        removeRequiredAction(action.toString());
     }
 }
