@@ -1,10 +1,8 @@
 package com.secusociale.provider;
 
 import com.secusociale.repository.UserRepository;
-import jakarta.persistence.EntityManager;
 import org.jboss.logging.Logger;
 import org.keycloak.component.ComponentModel;
-import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.provider.ProviderConfigProperty;
@@ -16,6 +14,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CustomUserStorageProviderFactory implements UserStorageProviderFactory<CustomUserStorageProvider> {
 
@@ -33,6 +32,9 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
     private static final String DEFAULT_CONNECTION_USERNAME = "suntel";
     private static final String DEFAULT_CONNECTION_PASSWORD = "suntel";
     private static final String DEFAULT_CONNECTION_DRIVER = "com.mysql.cj.jdbc.Driver";
+
+    // Cache pour les DataSources
+    private static final ConcurrentHashMap<String, DataSource> dataSourceCache = new ConcurrentHashMap<>();
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
@@ -74,13 +76,13 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
         logger.infof("Création d'une instance CustomUserStorageProvider pour le modèle: %s", model.getName());
 
         try {
-            // Utiliser l'EntityManager de Keycloak
-            EntityManager entityManager = getKeycloakEntityManager(session);
-            UserRepository userRepository = new UserRepository(entityManager);
-            
+            // Créer une DataSource pour la base de données externe
+            DataSource dataSource = getOrCreateDataSource(model);
+            UserRepository userRepository = new UserRepository(dataSource);
+
             CustomUserStorageProvider provider = new CustomUserStorageProvider(session, model, userRepository);
             logger.infof("CustomUserStorageProvider créé avec succès pour: %s", model.getName());
-            
+
             return provider;
         } catch (Exception e) {
             logger.errorf(e, "Erreur lors de la création du provider: %s", e.getMessage());
@@ -101,6 +103,17 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
     @Override
     public void close() {
         logger.info("Fermeture de CustomUserStorageProviderFactory");
+        // Fermer toutes les DataSources en cache
+        dataSourceCache.values().forEach(ds -> {
+            try {
+                if (ds instanceof com.zaxxer.hikari.HikariDataSource) {
+                    ((com.zaxxer.hikari.HikariDataSource) ds).close();
+                }
+            } catch (Exception e) {
+                logger.warnf(e, "Erreur lors de la fermeture de la DataSource: %s", e.getMessage());
+            }
+        });
+        dataSourceCache.clear();
     }
 
     @Override
@@ -114,21 +127,56 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
     }
 
     /**
-     * Utilise l'EntityManager de Keycloak
+     * Crée ou récupère une DataSource pour la configuration donnée
      */
-    private EntityManager getKeycloakEntityManager(KeycloakSession session) {
+    private DataSource getOrCreateDataSource(ComponentModel model) {
+        String url = model.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
+        String username = model.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
+        String password = model.get(CONFIG_CONNECTION_PASSWORD, DEFAULT_CONNECTION_PASSWORD);
+
+        String cacheKey = url + ":" + username;
+
+        return dataSourceCache.computeIfAbsent(cacheKey, key -> {
+            logger.infof("Création d'une nouvelle DataSource pour: %s", url);
+            return createHikariDataSource(url, username, password);
+        });
+    }
+
+    /**
+     * Crée une DataSource HikariCP
+     */
+    private DataSource createHikariDataSource(String url, String username, String password) {
         try {
-            JpaConnectionProvider jpaProvider = session.getProvider(JpaConnectionProvider.class);
-            if (jpaProvider != null) {
-                EntityManager em = jpaProvider.getEntityManager();
-                logger.info("Utilisation de l'EntityManager de Keycloak");
-                return em;
-            } else {
-                throw new RuntimeException("JpaConnectionProvider non disponible");
-            }
+            com.zaxxer.hikari.HikariConfig config = new com.zaxxer.hikari.HikariConfig();
+            config.setJdbcUrl(url);
+            config.setUsername(username);
+            config.setPassword(password);
+            config.setDriverClassName("com.mysql.cj.jdbc.Driver");
+
+            // Configuration du pool
+            config.setMaximumPoolSize(10);
+            config.setMinimumIdle(2);
+            config.setConnectionTimeout(30000);
+            config.setIdleTimeout(600000);
+            config.setMaxLifetime(1800000);
+            config.setLeakDetectionThreshold(60000);
+
+            // Configuration MySQL spécifique
+            config.addDataSourceProperty("cachePrepStmts", "true");
+            config.addDataSourceProperty("prepStmtCacheSize", "250");
+            config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            config.addDataSourceProperty("useServerPrepStmts", "true");
+            config.addDataSourceProperty("useLocalSessionState", "true");
+            config.addDataSourceProperty("rewriteBatchedStatements", "true");
+            config.addDataSourceProperty("cacheResultSetMetadata", "true");
+            config.addDataSourceProperty("cacheServerConfiguration", "true");
+            config.addDataSourceProperty("elideSetAutoCommits", "true");
+            config.addDataSourceProperty("maintainTimeStats", "false");
+
+            return new com.zaxxer.hikari.HikariDataSource(config);
         } catch (Exception e) {
-            logger.errorf(e, "Impossible d'obtenir l'EntityManager de Keycloak: %s", e.getMessage());
-            throw new RuntimeException("Impossible d'obtenir l'EntityManager de Keycloak", e);
+            logger.errorf(e, "Erreur lors de la création de la DataSource: %s", e.getMessage());
+            throw new RuntimeException("Impossible de créer la DataSource", e);
         }
     }
 
@@ -141,10 +189,10 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
             String url = model.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
             String username = model.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
             String password = model.get(CONFIG_CONNECTION_PASSWORD, DEFAULT_CONNECTION_PASSWORD);
-            
+
             // Test de connexion JDBC basique
             testJdbcConnection(url, username, password);
-            
+
             logger.info("Validation de la configuration réussie");
         } catch (Exception e) {
             logger.errorf(e, "Échec de validation de la configuration: %s", e.getMessage());
@@ -156,7 +204,7 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
         try {
             // Charger le driver MySQL
             Class.forName("com.mysql.cj.jdbc.Driver");
-            
+
             // Test de connexion simple
             try (Connection conn = java.sql.DriverManager.getConnection(url, username, password)) {
                 try (PreparedStatement stmt = conn.prepareStatement("SELECT COUNT(*) FROM jhi_user")) {
@@ -177,5 +225,24 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
     @Override
     public void onUpdate(KeycloakSession session, RealmModel realm, ComponentModel oldModel, ComponentModel newModel) {
         logger.info("Configuration mise à jour pour CustomUserStorageProvider");
+
+        // Invalider le cache de DataSource si la configuration a changé
+        String oldUrl = oldModel.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
+        String oldUsername = oldModel.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
+        String newUrl = newModel.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
+        String newUsername = newModel.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
+
+        if (!oldUrl.equals(newUrl) || !oldUsername.equals(newUsername)) {
+            String oldCacheKey = oldUrl + ":" + oldUsername;
+            DataSource oldDataSource = dataSourceCache.remove(oldCacheKey);
+            if (oldDataSource instanceof com.zaxxer.hikari.HikariDataSource) {
+                try {
+                    ((com.zaxxer.hikari.HikariDataSource) oldDataSource).close();
+                    logger.info("Ancienne DataSource fermée suite à la mise à jour de configuration");
+                } catch (Exception e) {
+                    logger.warnf(e, "Erreur lors de la fermeture de l'ancienne DataSource: %s", e.getMessage());
+                }
+            }
+        }
     }
 }

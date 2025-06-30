@@ -22,7 +22,7 @@ public class CustomUserStorageProvider implements UserStorageProvider,
         UserQueryProvider, UserLookupProvider {
 
     private static final Logger logger = Logger.getLogger(CustomUserStorageProvider.class);
-    
+
     private ComponentModel componentModel;
     private KeycloakSession keycloakSession;
     private UserRepository userRepository;
@@ -37,12 +37,16 @@ public class CustomUserStorageProvider implements UserStorageProvider,
     @Override
     public void close() {
         logger.debug("Fermeture du CustomUserStorageProvider");
+        // Fermer l'EntityManager si nécessaire
+        if (userRepository != null) {
+            userRepository.close();
+        }
     }
 
     @Override
     public Stream<UserModel> searchForUserStream(RealmModel realmModel, Map<String, String> params, Integer firstResult, Integer maxResults) {
         logger.debugf("Recherche d'utilisateurs avec params: %s", params);
-        
+
         String searchParam = params.getOrDefault("keycloak.session.realm.users.query.search",
                 params.getOrDefault("email", params.getOrDefault("username", "")));
 
@@ -80,13 +84,13 @@ public class CustomUserStorageProvider implements UserStorageProvider,
     @Override
     public UserModel getUserById(RealmModel realmModel, String id) {
         logger.debugf("Recherche utilisateur par ID: %s", id);
-        
+
         try {
             String externalId = StorageId.externalId(id);
             long persistenceId = Long.parseLong(externalId);
-            
+
             Optional<User> userOptional = userRepository.findById(persistenceId);
-            
+
             if (userOptional.isPresent()) {
                 logger.debugf("Utilisateur trouvé par ID %s: %s", id, userOptional.get().getLogin());
                 return new UserAdapter(keycloakSession, realmModel, componentModel, userOptional.get());
@@ -106,10 +110,10 @@ public class CustomUserStorageProvider implements UserStorageProvider,
     @Override
     public UserModel getUserByUsername(RealmModel realmModel, String username) {
         logger.debugf("Recherche utilisateur par username: %s", username);
-        
+
         try {
             Optional<User> userOptional = userRepository.findOneByLogin(username);
-            
+
             if (userOptional.isPresent()) {
                 logger.debugf("Utilisateur trouvé par username %s: %s", username, userOptional.get().getEmail());
                 return new UserAdapter(keycloakSession, realmModel, componentModel, userOptional.get());
@@ -126,10 +130,10 @@ public class CustomUserStorageProvider implements UserStorageProvider,
     @Override
     public UserModel getUserByEmail(RealmModel realmModel, String email) {
         logger.debugf("Recherche utilisateur par email: %s", email);
-        
+
         try {
             Optional<User> userOptional = userRepository.findOneByEmailIgnoreCase(email);
-            
+
             if (userOptional.isPresent()) {
                 logger.debugf("Utilisateur trouvé par email %s: %s", email, userOptional.get().getLogin());
                 return new UserAdapter(keycloakSession, realmModel, componentModel, userOptional.get());
