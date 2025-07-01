@@ -1,6 +1,9 @@
 package com.secusociale.provider;
 
 import com.secusociale.repository.UserRepository;
+import com.secusociale.vault.VaultClient;
+import com.secusociale.vault.VaultCredentials;
+import com.secusociale.vault.VaultException;
 import org.jboss.logging.Logger;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.models.KeycloakSession;
@@ -22,44 +25,47 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
     public static final String PROVIDER_NAME = "ndamli-provider";
 
     // Configuration properties keys
-    protected static final String CONFIG_CONNECTION_URL = "connectionUrl";
-    protected static final String CONFIG_CONNECTION_USERNAME = "connectionUsername";
-    protected static final String CONFIG_CONNECTION_PASSWORD = "connectionPassword";
+    protected static final String CONFIG_VAULT_URL = "vaultUrl";
+    protected static final String CONFIG_VAULT_TOKEN = "vaultToken";
+    protected static final String CONFIG_VAULT_SECRET_PATH = "vaultSecretPath";
     protected static final String CONFIG_CONNECTION_DRIVER = "connectionDriver";
 
     // Default values
-    private static final String DEFAULT_CONNECTION_URL = "jdbc:mysql://localhost:3306/cssipres_preprod?allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=UTC&createDatabaseIfNotExist=true";
-    private static final String DEFAULT_CONNECTION_USERNAME = "suntel";
-    private static final String DEFAULT_CONNECTION_PASSWORD = "suntel";
+    private static final String DEFAULT_VAULT_URL = "http://localhost:8200";
+    private static final String DEFAULT_VAULT_TOKEN = "hvs.hWP5WownECWEzuDigz3QRGfZ";
+    private static final String DEFAULT_VAULT_SECRET_PATH = "secret/data/ndamli_db_access_dev";
     private static final String DEFAULT_CONNECTION_DRIVER = "com.mysql.cj.jdbc.Driver";
 
     // Cache pour les DataSources
     private static final ConcurrentHashMap<String, DataSource> dataSourceCache = new ConcurrentHashMap<>();
+    
+    // Cache pour les clients Vault
+    private static final ConcurrentHashMap<String, VaultClient> vaultClientCache = new ConcurrentHashMap<>();
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
         return ProviderConfigurationBuilder.create()
                 .property()
-                .name(CONFIG_CONNECTION_URL)
-                .label("Database URL")
+                .name(CONFIG_VAULT_URL)
+                .label("Vault URL")
                 .type(ProviderConfigProperty.STRING_TYPE)
-                .helpText("JDBC URL de la base de données")
-                .defaultValue(DEFAULT_CONNECTION_URL)
+                .helpText("URL du serveur HashiCorp Vault")
+                .defaultValue(DEFAULT_VAULT_URL)
                 .add()
                 .property()
-                .name(CONFIG_CONNECTION_USERNAME)
-                .label("Database Username")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .helpText("Nom d'utilisateur de la base de données")
-                .defaultValue(DEFAULT_CONNECTION_USERNAME)
-                .add()
-                .property()
-                .name(CONFIG_CONNECTION_PASSWORD)
-                .label("Database Password")
+                .name(CONFIG_VAULT_TOKEN)
+                .label("Vault Token")
                 .type(ProviderConfigProperty.PASSWORD)
-                .helpText("Mot de passe de la base de données")
+                .helpText("Token d'authentification Vault")
                 .secret(true)
-                .defaultValue(DEFAULT_CONNECTION_PASSWORD)
+                .defaultValue(DEFAULT_VAULT_TOKEN)
+                .add()
+                .property()
+                .name(CONFIG_VAULT_SECRET_PATH)
+                .label("Vault Secret Path")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .helpText("Chemin du secret dans Vault contenant les credentials DB")
+                .defaultValue(DEFAULT_VAULT_SECRET_PATH)
                 .add()
                 .property()
                 .name(CONFIG_CONNECTION_DRIVER)
@@ -73,19 +79,25 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
 
     @Override
     public CustomUserStorageProvider create(KeycloakSession session, ComponentModel model) {
-        logger.infof("Création d'une instance CustomUserStorageProvider pour le modèle: %s", model.getName());
+        logger.infof("🚀 Création d'une instance CustomUserStorageProvider pour le modèle: %s", model.getName());
 
         try {
-            // Créer une DataSource pour la base de données externe
-            DataSource dataSource = getOrCreateDataSource(model);
+            // Créer ou récupérer le client Vault
+            VaultClient vaultClient = getOrCreateVaultClient(model);
+            
+            // Récupérer les credentials depuis Vault
+            VaultCredentials credentials = getCredentialsFromVault(vaultClient, model);
+            
+            // Créer une DataSource avec les credentials Vault
+            DataSource dataSource = getOrCreateDataSource(model, credentials);
             UserRepository userRepository = new UserRepository(dataSource);
 
             CustomUserStorageProvider provider = new CustomUserStorageProvider(session, model, userRepository);
-            logger.infof("CustomUserStorageProvider créé avec succès pour: %s", model.getName());
+            logger.infof("✅ CustomUserStorageProvider créé avec succès pour: %s", model.getName());
 
             return provider;
         } catch (Exception e) {
-            logger.errorf(e, "Erreur lors de la création du provider: %s", e.getMessage());
+            logger.errorf(e, "❌ Erreur lors de la création du provider: %s", e.getMessage());
             throw new RuntimeException("Impossible de créer le CustomUserStorageProvider", e);
         }
     }
@@ -97,12 +109,13 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
 
     @Override
     public String getHelpText() {
-        return "Provider de stockage utilisateur personnalisé pour IPRES/CSS - Utilise la table jhi_user existante";
+        return "Provider de stockage utilisateur personnalisé pour IPRES/CSS - Utilise HashiCorp Vault pour les credentials DB";
     }
 
     @Override
     public void close() {
-        logger.info("Fermeture de CustomUserStorageProviderFactory");
+        logger.info("🔒 Fermeture de CustomUserStorageProviderFactory");
+        
         // Fermer toutes les DataSources en cache
         dataSourceCache.values().forEach(ds -> {
             try {
@@ -110,47 +123,81 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
                     ((com.zaxxer.hikari.HikariDataSource) ds).close();
                 }
             } catch (Exception e) {
-                logger.warnf(e, "Erreur lors de la fermeture de la DataSource: %s", e.getMessage());
+                logger.warnf(e, "⚠️ Erreur lors de la fermeture de la DataSource: %s", e.getMessage());
             }
         });
         dataSourceCache.clear();
+        
+        // Nettoyer les caches Vault
+        vaultClientCache.clear();
+        VaultClient.clearCache();
     }
 
     @Override
     public void init(org.keycloak.Config.Scope config) {
-        logger.info("Initialisation de CustomUserStorageProviderFactory");
+        logger.info("🔧 Initialisation de CustomUserStorageProviderFactory avec support Vault");
     }
 
     @Override
     public void postInit(org.keycloak.models.KeycloakSessionFactory factory) {
-        logger.info("Post-initialisation de CustomUserStorageProviderFactory");
+        logger.info("⚙️ Post-initialisation de CustomUserStorageProviderFactory");
+    }
+
+    /**
+     * Crée ou récupère un client Vault pour la configuration donnée
+     */
+    private VaultClient getOrCreateVaultClient(ComponentModel model) {
+        String vaultUrl = model.get(CONFIG_VAULT_URL, DEFAULT_VAULT_URL);
+        String vaultToken = model.get(CONFIG_VAULT_TOKEN, DEFAULT_VAULT_TOKEN);
+        
+        String cacheKey = vaultUrl + ":" + vaultToken.hashCode(); // Hash du token pour la sécurité
+        
+        return vaultClientCache.computeIfAbsent(cacheKey, key -> {
+            logger.infof("🔐 Création d'un nouveau VaultClient pour: %s", vaultUrl);
+            return new VaultClient(vaultUrl, vaultToken);
+        });
+    }
+    
+    /**
+     * Récupère les credentials depuis Vault
+     */
+    private VaultCredentials getCredentialsFromVault(VaultClient vaultClient, ComponentModel model) {
+        String secretPath = model.get(CONFIG_VAULT_SECRET_PATH, DEFAULT_VAULT_SECRET_PATH);
+        
+        try {
+            logger.infof("🔍 Récupération des credentials depuis Vault: %s", secretPath);
+            VaultCredentials credentials = vaultClient.getDatabaseCredentials(secretPath);
+            logger.infof("✅ Credentials récupérés avec succès depuis Vault (âge: %d secondes)", 
+                credentials.getAgeInSeconds());
+            return credentials;
+        } catch (VaultException e) {
+            logger.errorf(e, "❌ Erreur lors de la récupération des credentials Vault: %s", e.getMessage());
+            throw new RuntimeException("Impossible de récupérer les credentials depuis Vault", e);
+        }
     }
 
     /**
      * Crée ou récupère une DataSource pour la configuration donnée
      */
-    private DataSource getOrCreateDataSource(ComponentModel model) {
-        String url = model.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
-        String username = model.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
-        String password = model.get(CONFIG_CONNECTION_PASSWORD, DEFAULT_CONNECTION_PASSWORD);
-
-        String cacheKey = url + ":" + username;
+    private DataSource getOrCreateDataSource(ComponentModel model, VaultCredentials credentials) {
+        String cacheKey = credentials.getUrl() + ":" + credentials.getUsername();
 
         return dataSourceCache.computeIfAbsent(cacheKey, key -> {
-            logger.infof("Création d'une nouvelle DataSource pour: %s", url);
-            return createHikariDataSource(url, username, password);
+            logger.infof("💾 Création d'une nouvelle DataSource pour: %s", 
+                credentials.getUrl().substring(0, Math.min(50, credentials.getUrl().length())) + "...");
+            return createHikariDataSource(credentials);
         });
     }
 
     /**
-     * Crée une DataSource HikariCP
+     * Crée une DataSource HikariCP avec les credentials Vault
      */
-    private DataSource createHikariDataSource(String url, String username, String password) {
+    private DataSource createHikariDataSource(VaultCredentials credentials) {
         try {
             com.zaxxer.hikari.HikariConfig config = new com.zaxxer.hikari.HikariConfig();
-            config.setJdbcUrl(url);
-            config.setUsername(username);
-            config.setPassword(password);
+            config.setJdbcUrl(credentials.getUrl());
+            config.setUsername(credentials.getUsername());
+            config.setPassword(credentials.getPassword());
             config.setDriverClassName("com.mysql.cj.jdbc.Driver");
 
             // Configuration du pool
@@ -173,76 +220,103 @@ public class CustomUserStorageProviderFactory implements UserStorageProviderFact
             config.addDataSourceProperty("elideSetAutoCommits", "true");
             config.addDataSourceProperty("maintainTimeStats", "false");
 
+            logger.infof("✅ DataSource HikariCP créée avec succès");
             return new com.zaxxer.hikari.HikariDataSource(config);
         } catch (Exception e) {
-            logger.errorf(e, "Erreur lors de la création de la DataSource: %s", e.getMessage());
+            logger.errorf(e, "❌ Erreur lors de la création de la DataSource: %s", e.getMessage());
             throw new RuntimeException("Impossible de créer la DataSource", e);
         }
     }
 
     @Override
     public void validateConfiguration(KeycloakSession session, RealmModel realm, ComponentModel model) {
-        logger.info("Validation de la configuration pour CustomUserStorageProvider");
+        logger.info("🔍 Validation de la configuration pour CustomUserStorageProvider avec Vault");
 
         try {
-            // Test de connexion simple avec JDBC direct
-            String url = model.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
-            String username = model.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
-            String password = model.get(CONFIG_CONNECTION_PASSWORD, DEFAULT_CONNECTION_PASSWORD);
-
-            // Test de connexion JDBC basique
-            testJdbcConnection(url, username, password);
-
-            logger.info("Validation de la configuration réussie");
+            // 1. Test de connexion à Vault
+            VaultClient vaultClient = getOrCreateVaultClient(model);
+            
+            if (!vaultClient.testConnection()) {
+                throw new RuntimeException("Impossible de se connecter à Vault");
+            }
+            logger.info("✅ Connexion à Vault validée");
+            
+            // 2. Test de récupération des credentials
+            VaultCredentials credentials = getCredentialsFromVault(vaultClient, model);
+            logger.infof("✅ Credentials récupérés depuis Vault: %s", credentials);
+            
+            // 3. Test de connexion à la base de données
+            testDatabaseConnection(credentials);
+            logger.info("✅ Connexion à la base de données validée");
+            
+            logger.info("🎉 Validation de la configuration réussie avec Vault");
         } catch (Exception e) {
-            logger.errorf(e, "Échec de validation de la configuration: %s", e.getMessage());
+            logger.errorf(e, "❌ Échec de validation de la configuration: %s", e.getMessage());
             throw new RuntimeException("Échec de validation de la configuration: " + e.getMessage(), e);
         }
     }
 
-    private void testJdbcConnection(String url, String username, String password) {
+    private void testDatabaseConnection(VaultCredentials credentials) {
         try {
             // Charger le driver MySQL
             Class.forName("com.mysql.cj.jdbc.Driver");
 
             // Test de connexion simple
-            try (Connection conn = java.sql.DriverManager.getConnection(url, username, password)) {
+            try (Connection conn = java.sql.DriverManager.getConnection(
+                    credentials.getUrl(), credentials.getUsername(), credentials.getPassword())) {
                 try (PreparedStatement stmt = conn.prepareStatement("SELECT COUNT(*) FROM jhi_user")) {
                     try (ResultSet rs = stmt.executeQuery()) {
                         if (rs.next()) {
                             long count = rs.getLong(1);
-                            logger.infof("Test de connexion réussi. Nombre d'utilisateurs: %d", count);
+                            logger.infof("✅ Test de connexion DB réussi. Nombre d'utilisateurs: %d", count);
                         }
                     }
                 }
             }
         } catch (Exception e) {
-            logger.errorf(e, "Échec du test de connexion JDBC: %s", e.getMessage());
-            throw new RuntimeException("Échec du test de connexion: " + e.getMessage(), e);
+            logger.errorf(e, "❌ Échec du test de connexion DB: %s", e.getMessage());
+            throw new RuntimeException("Échec du test de connexion DB: " + e.getMessage(), e);
         }
     }
 
     @Override
     public void onUpdate(KeycloakSession session, RealmModel realm, ComponentModel oldModel, ComponentModel newModel) {
-        logger.info("Configuration mise à jour pour CustomUserStorageProvider");
+        logger.info("🔄 Configuration mise à jour pour CustomUserStorageProvider");
 
-        // Invalider le cache de DataSource si la configuration a changé
-        String oldUrl = oldModel.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
-        String oldUsername = oldModel.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
-        String newUrl = newModel.get(CONFIG_CONNECTION_URL, DEFAULT_CONNECTION_URL);
-        String newUsername = newModel.get(CONFIG_CONNECTION_USERNAME, DEFAULT_CONNECTION_USERNAME);
+        // Vérifier si la configuration Vault a changé
+        String oldVaultUrl = oldModel.get(CONFIG_VAULT_URL, DEFAULT_VAULT_URL);
+        String oldVaultToken = oldModel.get(CONFIG_VAULT_TOKEN, DEFAULT_VAULT_TOKEN);
+        String oldSecretPath = oldModel.get(CONFIG_VAULT_SECRET_PATH, DEFAULT_VAULT_SECRET_PATH);
+        
+        String newVaultUrl = newModel.get(CONFIG_VAULT_URL, DEFAULT_VAULT_URL);
+        String newVaultToken = newModel.get(CONFIG_VAULT_TOKEN, DEFAULT_VAULT_TOKEN);
+        String newSecretPath = newModel.get(CONFIG_VAULT_SECRET_PATH, DEFAULT_VAULT_SECRET_PATH);
 
-        if (!oldUrl.equals(newUrl) || !oldUsername.equals(newUsername)) {
-            String oldCacheKey = oldUrl + ":" + oldUsername;
-            DataSource oldDataSource = dataSourceCache.remove(oldCacheKey);
-            if (oldDataSource instanceof com.zaxxer.hikari.HikariDataSource) {
+        boolean vaultConfigChanged = !oldVaultUrl.equals(newVaultUrl) || 
+                                   !oldVaultToken.equals(newVaultToken) ||
+                                   !oldSecretPath.equals(newSecretPath);
+
+        if (vaultConfigChanged) {
+            logger.info("🔄 Configuration Vault modifiée, nettoyage des caches...");
+            
+            // Nettoyer les caches
+            String oldVaultCacheKey = oldVaultUrl + ":" + oldVaultToken.hashCode();
+            vaultClientCache.remove(oldVaultCacheKey);
+            VaultClient.clearCache();
+            
+            // Nettoyer les DataSources (elles seront recréées avec les nouveaux credentials)
+            dataSourceCache.values().forEach(ds -> {
                 try {
-                    ((com.zaxxer.hikari.HikariDataSource) oldDataSource).close();
-                    logger.info("Ancienne DataSource fermée suite à la mise à jour de configuration");
+                    if (ds instanceof com.zaxxer.hikari.HikariDataSource) {
+                        ((com.zaxxer.hikari.HikariDataSource) ds).close();
+                    }
                 } catch (Exception e) {
-                    logger.warnf(e, "Erreur lors de la fermeture de l'ancienne DataSource: %s", e.getMessage());
+                    logger.warnf(e, "⚠️ Erreur lors de la fermeture de l'ancienne DataSource: %s", e.getMessage());
                 }
-            }
+            });
+            dataSourceCache.clear();
+            
+            logger.info("✅ Caches nettoyés suite à la mise à jour de configuration Vault");
         }
     }
 }
