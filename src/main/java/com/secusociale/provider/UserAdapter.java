@@ -19,10 +19,24 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
     private User user;
     private String keycloakId;
     private static final Logger logger = Logger.getLogger(UserAdapter.class);
+    
     public UserAdapter(KeycloakSession session, RealmModel realm, ComponentModel model, User user) {
         super(session, realm, model);
         this.user = user;
         this.keycloakId = StorageId.keycloakId(model, String.valueOf(user.getId()));
+        
+        // Log des authorities pour debug
+        if (user.getAuthorities() != null && !user.getAuthorities().isEmpty()) {
+            logger.infof("👥 Utilisateur %s a %d authorities: %s", 
+                user.getLogin(), 
+                user.getAuthorities().size(),
+                user.getAuthorities().stream()
+                    .map(Authority::getName)
+                    .reduce((a, b) -> a + ", " + b)
+                    .orElse("aucune"));
+        } else {
+            logger.warnf("⚠️ Utilisateur %s n'a aucune authority", user.getLogin());
+        }
     }
 
     @Override
@@ -205,19 +219,56 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public Stream<RoleModel> getRealmRoleMappingsStream() {
+        logger.debugf("🔍 getRealmRoleMappingsStream appelé pour l'utilisateur: %s", user.getLogin());
+        
         if (user.getAuthorities() == null || user.getAuthorities().isEmpty()) {
+            logger.warnf("⚠️ Aucune authority trouvée pour l'utilisateur: %s", user.getLogin());
             return Stream.empty();
         }
 
-        return user.getAuthorities().stream()
-                .map(Authority::getName)
-                .map(roleName -> realm.getRole(roleName))
-                .filter(Objects::nonNull);
+        List<RoleModel> roles = new ArrayList<>();
+        
+        for (Authority authority : user.getAuthorities()) {
+            String roleName = authority.getName();
+            logger.debugf("🔍 Recherche du rôle Keycloak: %s", roleName);
+            
+            // Chercher le rôle dans Keycloak
+            RoleModel role = realm.getRole(roleName);
+            
+            if (role != null) {
+                roles.add(role);
+                logger.debugf("✅ Rôle trouvé et ajouté: %s", roleName);
+            } else {
+                logger.warnf("⚠️ Rôle non trouvé dans Keycloak: %s - Création automatique", roleName);
+                
+                // Créer automatiquement le rôle s'il n'existe pas
+                try {
+                    RoleModel newRole = realm.addRole(roleName);
+                    if (newRole != null) {
+                        newRole.setDescription("Rôle créé automatiquement depuis la base de données externe");
+                        roles.add(newRole);
+                        logger.infof("✅ Rôle créé automatiquement: %s", roleName);
+                    }
+                } catch (Exception e) {
+                    logger.errorf(e, "❌ Erreur lors de la création du rôle %s: %s", roleName, e.getMessage());
+                }
+            }
+        }
+        
+        logger.infof("👥 Rôles finaux pour %s: %s", 
+            user.getLogin(), 
+            roles.stream()
+                .map(RoleModel::getName)
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("aucun"));
+        
+        return roles.stream();
     }
 
     @Override
     public Stream<RoleModel> getClientRoleMappingsStream(org.keycloak.models.ClientModel client) {
         // Pour ce cas d'usage, nous nous concentrons sur les rôles realm
+        logger.debugf("🔍 getClientRoleMappingsStream appelé pour le client: %s", client.getClientId());
         return Stream.empty();
     }
 
@@ -227,24 +278,30 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
             return false;
         }
 
-        return user.getAuthorities().stream()
+        boolean hasRole = user.getAuthorities().stream()
                 .anyMatch(auth -> auth.getName().equals(role.getName()));
+        
+        logger.debugf("🔍 hasRole(%s) pour %s: %s", role.getName(), user.getLogin(), hasRole);
+        return hasRole;
     }
 
     @Override
     public void grantRole(RoleModel role) {
         // Lecture seule - ne pas permettre l'ajout de rôles
+        logger.warnf("⚠️ Tentative d'ajout du rôle %s à %s (opération non autorisée)", role.getName(), user.getLogin());
         throw new UnsupportedOperationException("Ajout de rôles non autorisé via ce provider");
     }
 
     @Override
     public Stream<RoleModel> getRoleMappingsStream() {
+        logger.debugf("🔍 getRoleMappingsStream appelé pour l'utilisateur: %s", user.getLogin());
         return getRealmRoleMappingsStream();
     }
 
     @Override
     public void deleteRoleMapping(RoleModel role) {
         // Lecture seule - ne pas permettre la suppression de rôles
+        logger.warnf("⚠️ Tentative de suppression du rôle %s pour %s (opération non autorisée)", role.getName(), user.getLogin());
         throw new UnsupportedOperationException("Suppression de rôles non autorisée via ce provider");
     }
 
@@ -262,6 +319,7 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
                 ", email='" + getEmail() + '\'' +
                 ", enabled=" + isEnabled() +
                 ", locked=" + user.isLocked() +
+                ", authorities=" + (user.getAuthorities() != null ? user.getAuthorities().size() : 0) +
                 '}';
     }
 
